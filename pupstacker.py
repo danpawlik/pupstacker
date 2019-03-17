@@ -2,10 +2,14 @@
 
 
 import argparse
+import configparser
 import git
 import glob
+import json
 import sys
 import os
+
+from oslo_config import cfg
 
 
 def get_args():
@@ -68,12 +72,57 @@ def create_dir(dst_dir):
 
 
 def get_sample_files(project_dir):
+    print("Getting sample files...")
     sample_files = []
     generated_dir = "%s/etc/*.sample" % project_dir
     for sample in glob.glob(generated_dir):
         sample_files.append(sample)
 
-    return sample
+    return sample_files
+
+
+def filter_sample_files(sample_files):
+    tmp_list = []
+    for conf_file in sample_files:
+        if 'conf' in conf_file:
+            tmp_list.append(conf_file)
+
+    return tmp_list
+
+
+def cleanup_sample_files(sample_files):
+    for sample in sample_files:
+        sed_on_file(sample)
+
+
+def get_params_from_section(section, conf):
+    for namespace in conf._namespace._normalized[0]:
+        if namespace == section:
+            return conf._namespace._normalized[0].get(namespace)
+
+
+def get_config_params(sample):
+    # return a dict with section and params:
+    # {SECTION: {param:value}}
+    sample_conf = {}
+    CONF = cfg.CONF
+    CONF(['--config-file', sample])
+    if CONF.list_all_sections():
+        for section in CONF.list_all_sections():
+            sample_conf['section'] = get_params_from_section(section, CONF)
+
+    return sample_conf
+
+
+def parse_sample_files(sample_files):
+    print("Parsing sample files...")
+    parsed_params = {}
+    for sample in sample_files:
+        config_name = os.path.basename(sample)
+        parameters = get_config_params(sample)
+        parsed_params[config_name] = parameters
+
+    return parsed_params
 
 
 if __name__ == "__main__":
@@ -103,6 +152,15 @@ if __name__ == "__main__":
     # Find *.sample files in project/etc/*sample location
     project_dir = '/root/pupstacker/glance'
     sample_files = get_sample_files(project_dir)
+    # remove ini, json, yaml files
+    sample_files = filter_sample_files(sample_files)
 
     # Take all sample files and remove all lines that starts with '#<space> '
-    sed_on_file('/root/pupstacker/glance/etc/glance-api.conf.sample')
+    if not sample_files:
+        print("Can't find any sample files. Exit")
+        os.exit(1)
+
+    cleanup_sample_files(sample_files)
+
+    # Create a dict with sample file configuration
+    parsed_params = parse_sample_files(sample_files)
