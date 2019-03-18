@@ -23,6 +23,13 @@ def get_args():
                         help='Puppet Openstack git project url')
     parser.add_argument('--workdir',
                         help='Set workdir, where projects will be cloned')
+    parser.add_argument('--no-tox', help='Dont execute tox genconfig',
+                        action='store_false')
+    parser.add_argument('--no-git-clone', help='Dont clone project repos',
+                        action='store_false')
+    parser.add_argument('--conf-sample',
+                        help='Name of the sample file. Only that file will be'
+                        ' parsed. E.g.: glance-api.conf.sample')
     return parser.parse_args()
 
 
@@ -109,7 +116,7 @@ def get_config_params(sample):
     CONF(['--config-file', sample])
     if CONF.list_all_sections():
         for section in CONF.list_all_sections():
-            sample_conf['section'] = get_params_from_section(section, CONF)
+            sample_conf[section] = get_params_from_section(section, CONF)
 
     return sample_conf
 
@@ -139,15 +146,18 @@ if __name__ == "__main__":
         print("No workdir set. Using current dir")
         args.workdir = os.getcwd()
 
-    # Cloning project url
-    project_dir = clone_project(args.project, args.workdir, args.project_url)
+    if args.no_git_clone:
+        # Cloning project url
+        project_dir = clone_project(args.project, args.workdir,
+                                    args.project_url)
 
-    # Cloning puppet project url
-    puppet_project_dir = clone_project(args.puppet_project, args.workdir,
-                                       args.puppet_project_url)
+        # Cloning puppet project url
+        puppet_project_dir = clone_project(args.puppet_project, args.workdir,
+                                           args.puppet_project_url)
 
-    # Go to the project dir and execute
-    execute_tox_genconfig(project_dir)
+    if args.no_tox:
+        # Go to the project dir and execute
+        execute_tox_genconfig(project_dir)
 
     # Find *.sample files in project/etc/*sample location
     project_dir = '/root/pupstacker/glance'
@@ -164,3 +174,5 @@ if __name__ == "__main__":
 
     # Create a dict with sample file configuration
     parsed_params = parse_sample_files(sample_files)
+    if args.conf_sample and args.conf_sample in parsed_params.keys():
+        parsed_params = {args.conf_sample: parsed_params[args.conf_sample]}
