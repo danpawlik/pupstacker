@@ -25,6 +25,8 @@ def get_args():
                         help='Set workdir, where projects will be cloned')
     parser.add_argument('--no-tox', help='Dont execute tox genconfig',
                         action='store_false')
+    parser.add_argument('--no-bundle', help='Dont execute bundle install',
+                        action='store_false')
     parser.add_argument('--no-git-clone', help='Dont clone project repos',
                         action='store_false')
     parser.add_argument('--conf-sample',
@@ -33,10 +35,14 @@ def get_args():
     return parser.parse_args()
 
 
-def clone_project(project, workdir, project_url):
+def clone_project(project, workdir, project_url, clone=True):
+    project_dir = ("%s/%s" % (workdir, project))
+
+    if not clone:
+        return project_dir
+
     git_url = (project_url if project_url else
                "https://github.com/openstack/%s" % project)
-    project_dir = ("%s/%s" % (workdir, project))
     create_dir(project_dir)
     try:
         print("Cloning project %s to %s" % (git_url, project_dir))
@@ -132,6 +138,20 @@ def parse_sample_files(sample_files):
     return parsed_params
 
 
+def setup_puppet_bundle(puppet_string_dir):
+    try:
+        execute_command = ("cd %s ; bundle install --path %s/.bundle/gems" %
+                           (puppet_string_dir, puppet_string_dir))
+    except Exception as e:
+        print("Please make sure, that all packages are installed described in"
+              " bindep.txt file then try one more time.")
+        raise
+
+
+def get_dir_files_in_dict(puppet_project_dir):
+    pass
+
+
 if __name__ == "__main__":
     args = get_args()
 
@@ -146,21 +166,30 @@ if __name__ == "__main__":
         print("No workdir set. Using current dir")
         args.workdir = os.getcwd()
 
+    # FIXME this ugly condition
     if args.no_git_clone:
-        # Cloning project url
-        project_dir = clone_project(args.project, args.workdir,
-                                    args.project_url)
+        clone = True
+    else:
+        clone = False
 
-        # Cloning puppet project url
-        puppet_project_dir = clone_project(args.puppet_project, args.workdir,
-                                           args.puppet_project_url)
+    # Cloning project url
+    project_dir = clone_project(args.project, args.workdir,
+                                args.project_url, clone=clone)
+
+    # Cloning puppet project url
+    puppet_project_dir = clone_project(args.puppet_project, args.workdir,
+                                       args.puppet_project_url, clone=clone)
+
+    # Clone puppet-string project
+    puppet_string_dir = clone_project('puppet-stings', args.workdir,
+                            'https://github.com/puppetlabs/puppet-strings',
+                            clone=clone)
 
     if args.no_tox:
         # Go to the project dir and execute
         execute_tox_genconfig(project_dir)
 
     # Find *.sample files in project/etc/*sample location
-    project_dir = '/root/pupstacker/glance'
     sample_files = get_sample_files(project_dir)
     # remove ini, json, yaml files
     sample_files = filter_sample_files(sample_files)
@@ -176,3 +205,16 @@ if __name__ == "__main__":
     parsed_params = parse_sample_files(sample_files)
     if args.conf_sample and args.conf_sample in parsed_params.keys():
         parsed_params = {args.conf_sample: parsed_params[args.conf_sample]}
+
+    # Clone puppet-strings project and setup ruby env:
+    if args.no_bundle:
+        setup_puppet_bundle(puppet_string_dir)
+
+
+    # Parse puppet manifest classes. At first, check it puppet has
+    # file that contains name which is in the section, e.g.:
+    # [scheduler] => manifest/sheduler.pp or manifest/scheduler/*
+    puppet_dir_structure = get_dir_files_in_dict(puppet_project_dir)
+
+    # Otherwise check if params including in section scheduler are
+    # defined in other manifest, but just in "main" manifest dir

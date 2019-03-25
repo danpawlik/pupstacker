@@ -1,0 +1,9 @@
+
+build-essential [platform:dpkg test]
+gcc [platform:rpm test]
+make
+ruby-dev
+ruby-all-dev
+zlib1g-dev
+ruby-bundler
+ruby
